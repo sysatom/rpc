@@ -1,2 +1,2 @@
-# rpc
+# RPC
 Go RPC
