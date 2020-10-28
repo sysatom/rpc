@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/sysatom/rpc/codec"
 	"io"
 	"log"
 	"net"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tsundata/rpc/codec"
 )
 
 const MagicNumber = 0x3bef5c

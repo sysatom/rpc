@@ -1,3 +1,3 @@
-module github.com/sysatom/rpc
+module github.com/tsundata/rpc
 
 go 1.14
