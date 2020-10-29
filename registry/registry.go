@@ -103,7 +103,11 @@ func Heartbeat(registry, addr string, duration time.Duration) {
 func sendHeartbeat(registry, addr string) error {
 	log.Println(addr, "send heart beat to registry", registry)
 	httpClient := &http.Client{}
-	req, _ := http.NewRequest("POST", registry, nil)
+	req, err := http.NewRequest("POST", registry, nil)
+	if err != nil {
+		log.Println("rpc server: heart beat err:", err)
+		return err
+	}
 	req.Header.Set("X-RPC-Servers", addr)
 	if _, err := httpClient.Do(req); err != nil {
 		log.Println("rpc server: heart beat err:", err)
