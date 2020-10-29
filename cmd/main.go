@@ -29,17 +29,29 @@ func (f Foo) Sleep(args Args, reply *int) error {
 }
 
 func startRegistry(wg *sync.WaitGroup) {
-	l, _ := net.Listen("tcp", ":5000")
+	l, err := net.Listen("tcp", ":8080")
+	if err != nil {
+		panic(err)
+	}
 	registry.HandleHTTP()
 	wg.Done()
-	_ = http.Serve(l, nil)
+	err = http.Serve(l, nil)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func startServer(registryAddr string, wg *sync.WaitGroup) {
 	var foo Foo
-	l, _ := net.Listen("tcp", ":0")
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		panic(err)
+	}
 	server := rpc.NewServer()
-	_ = server.Register(&foo)
+	err = server.Register(&foo)
+	if err != nil {
+		panic(err)
+	}
 	registry.Heartbeat(registryAddr, "tcp@"+l.Addr().String(), 0)
 	wg.Done()
 	server.Accept(l)
