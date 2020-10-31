@@ -1,6 +1,8 @@
 package xclient
 
 import (
+	"errors"
+	"github.com/tsundata/rpc/registry"
 	"log"
 	"net/http"
 	"strings"
@@ -21,14 +23,14 @@ func NewRegistryDiscovery(registerAddr string, timeout time.Duration) *RegistryD
 		timeout = defaultUpdateTimeout
 	}
 	d := &RegistryDiscovery{
-		MultiServersDiscovery: NewMultiServerDiscovery(make([]string, 0)),
+		MultiServersDiscovery: NewMultiServerDiscovery(make([]registry.ServerItem, 0)),
 		registry:              registerAddr,
 		timeout:               timeout,
 	}
 	return d
 }
 
-func (d *RegistryDiscovery) Update(servers []string) error {
+func (d *RegistryDiscovery) Update(servers []registry.ServerItem) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.servers = servers
@@ -49,26 +51,33 @@ func (d *RegistryDiscovery) Refresh() error {
 		return err
 	}
 	servers := strings.Split(resp.Header.Get("X-RPC-Servers"), ",")
-	d.servers = make([]string, 0, len(servers))
+	d.servers = make([]registry.ServerItem, 0, len(servers))
 	for _, server := range servers {
 		if strings.TrimSpace(server) != "" {
-			d.servers = append(d.servers, strings.TrimSpace(server))
+			item := strings.Split(server, "|")
+			if len(item) != 2 {
+				return errors.New("ServerItem error")
+			}
+			d.servers = append(d.servers, registry.ServerItem{
+				App:  item[0],
+				Addr: item[1],
+			})
 		}
 	}
 	d.lastUpdate = time.Now()
 	return nil
 }
 
-func (d *RegistryDiscovery) Get(mode SelectMode) (string, error) {
+func (d *RegistryDiscovery) Get(app string, mode SelectMode) (registry.ServerItem, error) {
 	if err := d.Refresh(); err != nil {
-		return "", err
+		return registry.ServerItem{}, err
 	}
-	return d.MultiServersDiscovery.Get(mode)
+	return d.MultiServersDiscovery.Get(app, mode)
 }
 
-func (d *RegistryDiscovery) GetAll() ([]string, error) {
+func (d *RegistryDiscovery) GetAll(app string) ([]registry.ServerItem, error) {
 	if err := d.Refresh(); err != nil {
 		return nil, err
 	}
-	return d.MultiServersDiscovery.GetAll()
+	return d.MultiServersDiscovery.GetAll(app)
 }

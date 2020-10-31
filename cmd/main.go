@@ -52,7 +52,7 @@ func startServer(registryAddr string, wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
-	registry.Heartbeat(registryAddr, "tcp@"+l.Addr().String(), 0)
+	registry.Heartbeat(registryAddr, "demo", "tcp@"+l.Addr().String(), 0)
 	wg.Done()
 	server.Accept(l)
 }
@@ -83,7 +83,7 @@ func call(registry string) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			foo(xc, context.Background(), "call", "Foo.Sum", &Args{
+			foo(xc, context.Background(), "call", "Demo.Foo.Sum", &Args{
 				Num1: i,
 				Num2: i * i,
 			})
@@ -102,12 +102,12 @@ func broadcast(registry string) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			foo(xc, context.Background(), "broadcast", "Foo.Sum", &Args{
+			foo(xc, context.Background(), "broadcast", "Demo.Foo.Sum", &Args{
 				Num1: i,
 				Num2: i * i,
 			})
 			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
-			foo(xc, ctx, "broadcast", "Foo.Sleep", &Args{
+			foo(xc, ctx, "broadcast", "Demo.Foo.Sleep", &Args{
 				Num1: i,
 				Num2: i * i,
 			})
@@ -118,7 +118,7 @@ func broadcast(registry string) {
 
 func main() {
 	log.SetFlags(0)
-	registryAddr := "http://localhost:5000/_rpc_/registry"
+	registryAddr := "http://localhost:8080/_rpc_/registry"
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go startRegistry(&wg)

@@ -2,8 +2,12 @@ package xclient
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"github.com/tsundata/rpc/registry"
 	"io"
 	"reflect"
+	"strings"
 	"sync"
 
 	. "github.com/tsundata/rpc"
@@ -67,15 +71,23 @@ func (xc *XClient) call(rpcAddr string, ctx context.Context, serviceMethod strin
 }
 
 func (xc *XClient) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
-	rpcAddr, err := xc.d.Get(xc.mode)
+	sm := strings.Split(serviceMethod, ".")
+	if len(sm) != 3 {
+		return errors.New("service method format error")
+	}
+	serverItem, err := xc.d.Get(strings.ToLower(sm[0]), xc.mode)
 	if err != nil {
 		return err
 	}
-	return xc.call(rpcAddr, ctx, serviceMethod, args, reply)
+	return xc.call(serverItem.Addr, ctx, fmt.Sprintf("%s.%s", sm[1], sm[2]), args, reply)
 }
 
 func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, reply interface{}) error {
-	servers, err := xc.d.GetAll()
+	sm := strings.Split(serviceMethod, ".")
+	if len(sm) != 3 {
+		return errors.New("service method format error")
+	}
+	servers, err := xc.d.GetAll(strings.ToLower(sm[0]))
 	if err != nil {
 		return err
 	}
@@ -84,15 +96,15 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 	var e error
 	replyDone := reply == nil
 	ctx, cancel := context.WithCancel(ctx)
-	for _, rpcAddr := range servers {
+	for _, serverItem := range servers {
 		wg.Add(1)
-		go func() {
+		go func(si registry.ServerItem) {
 			defer wg.Done()
 			var cloneReply interface{}
 			if reply != nil {
 				cloneReply = reflect.New(reflect.ValueOf(reply).Elem().Type()).Interface()
 			}
-			err := xc.call(rpcAddr, ctx, serviceMethod, args, cloneReply)
+			err := xc.call(si.Addr, ctx, fmt.Sprintf("%s.%s", sm[1], sm[2]), args, cloneReply)
 			mu.Lock()
 			if err != nil && e == nil {
 				e = err
@@ -103,7 +115,7 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 				replyDone = true
 			}
 			mu.Unlock()
-		}()
+		}(serverItem)
 	}
 	wg.Wait()
 	return e

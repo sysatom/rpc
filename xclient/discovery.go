@@ -2,8 +2,10 @@ package xclient
 
 import (
 	"errors"
+	"github.com/tsundata/rpc/registry"
 	"math"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,19 +21,19 @@ const (
 
 type Discovery interface {
 	Refresh() error
-	Update(servers []string) error
-	Get(mode SelectMode) (string, error)
-	GetAll() ([]string, error)
+	Update(servers []registry.ServerItem) error
+	Get(app string, mode SelectMode) (registry.ServerItem, error)
+	GetAll(app string) ([]registry.ServerItem, error)
 }
 
 type MultiServersDiscovery struct {
 	r       *rand.Rand
 	mu      sync.RWMutex
-	servers []string
+	servers []registry.ServerItem
 	index   int
 }
 
-func NewMultiServerDiscovery(servers []string) *MultiServersDiscovery {
+func NewMultiServerDiscovery(servers []registry.ServerItem) *MultiServersDiscovery {
 	d := &MultiServersDiscovery{
 		servers: servers,
 		r:       rand.New(rand.NewSource(time.Now().UnixNano())),
@@ -46,36 +48,55 @@ func (d *MultiServersDiscovery) Refresh() error {
 	return nil
 }
 
-func (d *MultiServersDiscovery) Update(servers []string) error {
+func (d *MultiServersDiscovery) Update(servers []registry.ServerItem) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.servers = servers
 	return nil
 }
 
-func (d *MultiServersDiscovery) Get(mode SelectMode) (string, error) {
+func (d *MultiServersDiscovery) Get(app string, mode SelectMode) (registry.ServerItem, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	n := len(d.servers)
-	if n == 0 {
-		return "", errors.New("rpc discovery: available servers")
+
+	if len(d.servers) == 0 {
+		return registry.ServerItem{}, errors.New("rpc discovery: available servers")
 	}
+
+	// filter app
+	var servers []registry.ServerItem
+	for _, server := range d.servers {
+		if strings.ToLower(server.App) == strings.ToLower(app) {
+			servers = append(servers, server)
+		}
+	}
+	n := len(servers)
+	if servers == nil || n == 0 {
+		return registry.ServerItem{}, errors.New("rpc discovery: available servers")
+	}
+
 	switch mode {
 	case RandomSelect:
-		return d.servers[d.r.Intn(n)], nil
+		return servers[d.r.Intn(n)], nil
 	case RoundRobinSelect:
-		s := d.servers[d.index%n]
+		s := servers[d.index%n]
 		d.index = (d.index + 1) % n
 		return s, nil
 	default:
-		return "", errors.New("rpc discovery: not supported select mode")
+		return registry.ServerItem{}, errors.New("rpc discovery: not supported select mode")
 	}
 }
 
-func (d *MultiServersDiscovery) GetAll() ([]string, error) {
+func (d *MultiServersDiscovery) GetAll(app string) ([]registry.ServerItem, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	servers := make([]string, len(d.servers), len(d.servers))
-	copy(servers, d.servers)
+
+	var servers []registry.ServerItem
+	for _, server := range d.servers {
+		if strings.ToLower(server.App) == strings.ToLower(app) {
+			servers = append(servers, server)
+		}
+	}
+
 	return servers, nil
 }
