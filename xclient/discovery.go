@@ -16,14 +16,15 @@ const (
 	RandomSelect SelectMode = iota
 	RoundRobinSelect
 	WeightRoundRobinSelect
-	HashSelect
+	WeightedICMP
+	ConsistentHash
 )
 
 type Discovery interface {
 	Refresh() error
 	Update(servers []registry.ServerItem) error
-	Get(app string, mode SelectMode) (registry.ServerItem, error)
-	GetAll(app string) ([]registry.ServerItem, error)
+	Get(servicePath string, mode SelectMode) (registry.ServerItem, error)
+	GetAll(servicePath string) ([]registry.ServerItem, error)
 }
 
 type MultiServersDiscovery struct {
@@ -55,7 +56,7 @@ func (d *MultiServersDiscovery) Update(servers []registry.ServerItem) error {
 	return nil
 }
 
-func (d *MultiServersDiscovery) Get(app string, mode SelectMode) (registry.ServerItem, error) {
+func (d *MultiServersDiscovery) Get(servicePath string, mode SelectMode) (registry.ServerItem, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -63,10 +64,10 @@ func (d *MultiServersDiscovery) Get(app string, mode SelectMode) (registry.Serve
 		return registry.ServerItem{}, errors.New("rpc discovery: available servers")
 	}
 
-	// filter app
+	// filter path
 	var servers []registry.ServerItem
 	for _, server := range d.servers {
-		if strings.ToLower(server.App) == strings.ToLower(app) {
+		if strings.ToLower(server.ServicePath) == strings.ToLower(servicePath) {
 			servers = append(servers, server)
 		}
 	}
@@ -87,13 +88,13 @@ func (d *MultiServersDiscovery) Get(app string, mode SelectMode) (registry.Serve
 	}
 }
 
-func (d *MultiServersDiscovery) GetAll(app string) ([]registry.ServerItem, error) {
+func (d *MultiServersDiscovery) GetAll(servicePath string) ([]registry.ServerItem, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
 	var servers []registry.ServerItem
 	for _, server := range d.servers {
-		if strings.ToLower(server.App) == strings.ToLower(app) {
+		if strings.ToLower(server.ServicePath) == strings.ToLower(servicePath) {
 			servers = append(servers, server)
 		}
 	}

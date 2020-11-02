@@ -75,7 +75,7 @@ func foo(xc *xclient.XClient, ctx context.Context, typ, serviceMethod string, ar
 
 func call(registry string) {
 	d := xclient.NewRegistryDiscovery(registry, 0)
-	xc := xclient.NewXClient(d, xclient.RoundRobinSelect, nil)
+	xc := xclient.NewXClient("Demo", d, xclient.RoundRobinSelect, nil)
 	defer func() { _ = xc.Close() }()
 
 	var wg sync.WaitGroup
@@ -83,7 +83,7 @@ func call(registry string) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			foo(xc, context.Background(), "call", "Demo.Foo.Sum", &Args{
+			foo(xc, context.Background(), "call", "Foo.Sum", &Args{
 				Num1: i,
 				Num2: i * i,
 			})
@@ -94,7 +94,7 @@ func call(registry string) {
 
 func broadcast(registry string) {
 	d := xclient.NewRegistryDiscovery(registry, 0)
-	xc := xclient.NewXClient(d, xclient.RandomSelect, nil)
+	xc := xclient.NewXClient("Demo", d, xclient.RandomSelect, nil)
 	defer func() { _ = xc.Close() }()
 
 	var wg sync.WaitGroup
@@ -102,12 +102,12 @@ func broadcast(registry string) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			foo(xc, context.Background(), "broadcast", "Demo.Foo.Sum", &Args{
+			foo(xc, context.Background(), "broadcast", "Foo.Sum", &Args{
 				Num1: i,
 				Num2: i * i,
 			})
 			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
-			foo(xc, ctx, "broadcast", "Demo.Foo.Sleep", &Args{
+			foo(xc, ctx, "broadcast", "Foo.Sleep", &Args{
 				Num1: i,
 				Num2: i * i,
 			})

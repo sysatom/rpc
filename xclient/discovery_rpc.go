@@ -59,8 +59,8 @@ func (d *RegistryDiscovery) Refresh() error {
 				return errors.New("ServerItem error")
 			}
 			d.servers = append(d.servers, registry.ServerItem{
-				App:  item[0],
-				Addr: item[1],
+				ServicePath: item[0],
+				Addr:        item[1],
 			})
 		}
 	}
@@ -68,16 +68,16 @@ func (d *RegistryDiscovery) Refresh() error {
 	return nil
 }
 
-func (d *RegistryDiscovery) Get(app string, mode SelectMode) (registry.ServerItem, error) {
+func (d *RegistryDiscovery) Get(servicePath string, mode SelectMode) (registry.ServerItem, error) {
 	if err := d.Refresh(); err != nil {
 		return registry.ServerItem{}, err
 	}
-	return d.MultiServersDiscovery.Get(app, mode)
+	return d.MultiServersDiscovery.Get(servicePath, mode)
 }
 
-func (d *RegistryDiscovery) GetAll(app string) ([]registry.ServerItem, error) {
+func (d *RegistryDiscovery) GetAll(servicePath string) ([]registry.ServerItem, error) {
 	if err := d.Refresh(); err != nil {
 		return nil, err
 	}
-	return d.MultiServersDiscovery.GetAll(app)
+	return d.MultiServersDiscovery.GetAll(servicePath)
 }

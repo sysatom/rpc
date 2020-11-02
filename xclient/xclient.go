@@ -2,33 +2,32 @@ package xclient
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"github.com/tsundata/rpc/registry"
 	"io"
 	"reflect"
-	"strings"
 	"sync"
 
 	. "github.com/tsundata/rpc"
 )
 
 type XClient struct {
-	d       Discovery
-	mode    SelectMode
-	opt     *Option
-	mu      sync.Mutex
-	clients map[string]*Client
+	servicePath string
+	d           Discovery
+	mode        SelectMode
+	opt         *Option
+	mu          sync.Mutex
+	clients     map[string]*Client
 }
 
 var _ io.Closer = (*XClient)(nil)
 
-func NewXClient(d Discovery, mode SelectMode, opt *Option) *XClient {
+func NewXClient(servicePath string, d Discovery, mode SelectMode, opt *Option) *XClient {
 	return &XClient{
-		d:       d,
-		mode:    mode,
-		opt:     opt,
-		clients: make(map[string]*Client),
+		servicePath: servicePath,
+		d:           d,
+		mode:        mode,
+		opt:         opt,
+		clients:     make(map[string]*Client),
 	}
 }
 
@@ -67,27 +66,19 @@ func (xc *XClient) call(rpcAddr string, ctx context.Context, serviceMethod strin
 	if err != nil {
 		return err
 	}
-	return client.Call(ctx, serviceMethod, args, reply)
+	return client.Call(ctx, xc.servicePath, serviceMethod, args, reply)
 }
 
 func (xc *XClient) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
-	sm := strings.Split(serviceMethod, ".")
-	if len(sm) != 3 {
-		return errors.New("service method format error")
-	}
-	serverItem, err := xc.d.Get(strings.ToLower(sm[0]), xc.mode)
+	serverItem, err := xc.d.Get(xc.servicePath, xc.mode)
 	if err != nil {
 		return err
 	}
-	return xc.call(serverItem.Addr, ctx, fmt.Sprintf("%s.%s", sm[1], sm[2]), args, reply)
+	return xc.call(serverItem.Addr, ctx, serviceMethod, args, reply)
 }
 
 func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, reply interface{}) error {
-	sm := strings.Split(serviceMethod, ".")
-	if len(sm) != 3 {
-		return errors.New("service method format error")
-	}
-	servers, err := xc.d.GetAll(strings.ToLower(sm[0]))
+	servers, err := xc.d.GetAll(xc.servicePath)
 	if err != nil {
 		return err
 	}
@@ -104,7 +95,7 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 			if reply != nil {
 				cloneReply = reflect.New(reflect.ValueOf(reply).Elem().Type()).Interface()
 			}
-			err := xc.call(si.Addr, ctx, fmt.Sprintf("%s.%s", sm[1], sm[2]), args, cloneReply)
+			err := xc.call(si.Addr, ctx, serviceMethod, args, cloneReply)
 			mu.Lock()
 			if err != nil && e == nil {
 				e = err

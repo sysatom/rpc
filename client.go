@@ -19,6 +19,7 @@ import (
 
 type Call struct {
 	Seq          uint64
+	ServicePath  string
 	ServerMethod string
 	Args         interface{}
 	Reply        interface{}
@@ -189,13 +190,14 @@ func (c *Client) send(call *Call) {
 	}
 }
 
-func (c *Client) Go(serviceMethod string, args, reply interface{}, done chan *Call) *Call {
+func (c *Client) Go(servicePath, serviceMethod string, args, reply interface{}, done chan *Call) *Call {
 	if done == nil {
 		done = make(chan *Call, 10)
 	} else if cap(done) == 0 {
 		log.Panic("rpc client: done channel is unbuffered")
 	}
 	call := &Call{
+		ServicePath:  servicePath,
 		ServerMethod: serviceMethod,
 		Args:         args,
 		Reply:        reply,
@@ -205,8 +207,8 @@ func (c *Client) Go(serviceMethod string, args, reply interface{}, done chan *Ca
 	return call
 }
 
-func (c *Client) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
-	call := c.Go(serviceMethod, args, reply, make(chan *Call, 1))
+func (c *Client) Call(ctx context.Context, servicePath, serviceMethod string, args, reply interface{}) error {
+	call := c.Go(servicePath, serviceMethod, args, reply, make(chan *Call, 1))
 	select {
 	case <-ctx.Done():
 		c.removeCall(call.Seq)
