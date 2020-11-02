@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"github.com/tsundata/rpc/codec"
 	"log"
 	"net"
 	"net/http"
@@ -52,6 +54,16 @@ func startServer(registryAddr string, wg *sync.WaitGroup) {
 	if err != nil {
 		panic(err)
 	}
+
+	// Auth
+	server.AuthFunc = func(header *codec.Header, token string) error {
+		if token == "bearer 123456" {
+			return nil
+		}
+
+		return errors.New("invalid token")
+	}
+
 	registry.Heartbeat(registryAddr, "demo", "tcp@"+l.Addr().String(), 0)
 	wg.Done()
 	server.Accept(l)
@@ -60,6 +72,7 @@ func startServer(registryAddr string, wg *sync.WaitGroup) {
 func foo(xc *xclient.XClient, ctx context.Context, typ, serviceMethod string, args *Args) {
 	var reply int
 	var err error
+	xc.Auth("bearer 123456")
 	switch typ {
 	case "call":
 		err = xc.Call(ctx, serviceMethod, args, &reply)

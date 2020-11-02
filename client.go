@@ -21,9 +21,10 @@ type Call struct {
 	Seq          uint64
 	ServicePath  string
 	ServerMethod string
+	Metadata     map[string]string
 	Args         interface{}
 	Reply        interface{}
-	Error        error
+	Error        string
 	Done         chan *Call
 }
 
@@ -90,7 +91,7 @@ func (c *Client) terminateCalls(err error) {
 	defer c.mu.Unlock()
 	c.shutdown = true
 	for _, call := range c.pending {
-		call.Error = err
+		call.Error = err.Error()
 		call.done()
 	}
 }
@@ -106,14 +107,14 @@ func (c *Client) receive() {
 		switch {
 		case call == nil:
 			err = c.cc.ReadBody(nil)
-		case h.Error != nil:
+		case h.Error != "":
 			call.Error = h.Error
 			err = c.cc.ReadBody(nil)
 			call.done()
 		default:
 			err = c.cc.ReadBody(call.Reply)
 			if err != nil {
-				call.Error = errors.New("reading body " + err.Error())
+				call.Error = "reading body " + err.Error()
 			}
 			call.done()
 		}
@@ -172,25 +173,27 @@ func (c *Client) send(call *Call) {
 
 	seq, err := c.registerCall(call)
 	if err != nil {
-		call.Error = err
+		call.Error = err.Error()
 		call.done()
 		return
 	}
 
+	c.header.ServicePath = call.ServicePath
 	c.header.ServiceMethod = call.ServerMethod
+	c.header.Metadata = call.Metadata
 	c.header.Seq = seq
-	c.header.Error = nil
+	c.header.Error = ""
 
 	if err := c.cc.Write(&c.header, call.Args); err != nil {
 		call := c.removeCall(seq)
 		if call != nil {
-			call.Error = err
+			call.Error = err.Error()
 			call.done()
 		}
 	}
 }
 
-func (c *Client) Go(servicePath, serviceMethod string, args, reply interface{}, done chan *Call) *Call {
+func (c *Client) Go(ctx context.Context, servicePath, serviceMethod string, args, reply interface{}, done chan *Call) *Call {
 	if done == nil {
 		done = make(chan *Call, 10)
 	} else if cap(done) == 0 {
@@ -203,18 +206,25 @@ func (c *Client) Go(servicePath, serviceMethod string, args, reply interface{}, 
 		Reply:        reply,
 		Done:         done,
 	}
+	meta := ctx.Value(ReqMetaDataKey)
+	if meta != nil {
+		call.Metadata = meta.(map[string]string)
+	}
 	c.send(call)
 	return call
 }
 
 func (c *Client) Call(ctx context.Context, servicePath, serviceMethod string, args, reply interface{}) error {
-	call := c.Go(servicePath, serviceMethod, args, reply, make(chan *Call, 1))
+	call := c.Go(ctx, servicePath, serviceMethod, args, reply, make(chan *Call, 1))
 	select {
 	case <-ctx.Done():
 		c.removeCall(call.Seq)
 		return errors.New("rpc client: call failed " + ctx.Err().Error())
 	case call := <-call.Done:
-		return call.Error
+		if call.Error != "" {
+			return errors.New(call.Error)
+		}
+		return nil
 	}
 }
 
@@ -260,10 +270,10 @@ func dialTimeout(f newClientFunc, network, address string, opts ...*Option) (cli
 }
 
 func NewHTTPClient(conn net.Conn, opt *Option) (*Client, error) {
-	_, _ = io.WriteString(conn, fmt.Sprintf("CONNECT %s HTTP/1.0\n\n", defaultRPCPath))
+	_, _ = io.WriteString(conn, fmt.Sprintf("CONNECT %s HTTP/1.0\n\n", DefaultRPCPath))
 
 	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
-	if err == nil && resp.Status == connected {
+	if err == nil && resp.Status == Connected {
 		return NewClient(conn, opt)
 	}
 	if err != nil {

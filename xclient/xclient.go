@@ -17,6 +17,8 @@ type XClient struct {
 	opt         *Option
 	mu          sync.Mutex
 	clients     map[string]*Client
+	// auth is a string for Authentication, for example, "Bearer mF_9.B5f-4.1JqM"
+	auth string
 }
 
 var _ io.Closer = (*XClient)(nil)
@@ -61,7 +63,7 @@ func (xc *XClient) dial(rpcAddr string) (*Client, error) {
 	return client, nil
 }
 
-func (xc *XClient) call(rpcAddr string, ctx context.Context, serviceMethod string, args, reply interface{}) error {
+func (xc *XClient) call(ctx context.Context, rpcAddr string, serviceMethod string, args, reply interface{}) error {
 	client, err := xc.dial(rpcAddr)
 	if err != nil {
 		return err
@@ -70,14 +72,34 @@ func (xc *XClient) call(rpcAddr string, ctx context.Context, serviceMethod strin
 }
 
 func (xc *XClient) Call(ctx context.Context, serviceMethod string, args, reply interface{}) error {
+	if xc.auth != "" {
+		metadata := ctx.Value(ReqMetaDataKey)
+		if metadata == nil {
+			metadata = map[string]string{}
+			ctx = context.WithValue(ctx, ReqMetaDataKey, metadata)
+		}
+		m := metadata.(map[string]string)
+		m[AuthKey] = xc.auth
+	}
+
 	serverItem, err := xc.d.Get(xc.servicePath, xc.mode)
 	if err != nil {
 		return err
 	}
-	return xc.call(serverItem.Addr, ctx, serviceMethod, args, reply)
+	return xc.call(ctx, serverItem.Addr, serviceMethod, args, reply)
 }
 
 func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, reply interface{}) error {
+	if xc.auth != "" {
+		metadata := ctx.Value(ReqMetaDataKey)
+		if metadata == nil {
+			metadata = map[string]string{}
+			ctx = context.WithValue(ctx, ReqMetaDataKey, metadata)
+		}
+		m := metadata.(map[string]string)
+		m[AuthKey] = xc.auth
+	}
+
 	servers, err := xc.d.GetAll(xc.servicePath)
 	if err != nil {
 		return err
@@ -95,7 +117,7 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 			if reply != nil {
 				cloneReply = reflect.New(reflect.ValueOf(reply).Elem().Type()).Interface()
 			}
-			err := xc.call(si.Addr, ctx, serviceMethod, args, cloneReply)
+			err := xc.call(ctx, si.Addr, serviceMethod, args, cloneReply)
 			mu.Lock()
 			if err != nil && e == nil {
 				e = err
@@ -110,4 +132,8 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 	}
 	wg.Wait()
 	return e
+}
+
+func (xc *XClient) Auth(auth string) {
+	xc.auth = auth
 }

@@ -16,7 +16,17 @@ import (
 	"github.com/tsundata/rpc/codec"
 )
 
-const MagicNumber = 0x3bef5c
+const (
+	AuthKey     = "__AUTH"
+	MagicNumber = 0x3bef5c
+
+	Connected        = "200 Connected to RPC"
+	DefaultRPCPath   = "/_rpc_"
+	DefaultDebugPath = "/debug/rpc"
+
+	ReqMetaDataKey = "__req_metadata"
+	ResMetaDataKey = "__res_metadata"
+)
 
 type Option struct {
 	MagicNumber    int
@@ -33,6 +43,9 @@ var DefaultOption = &Option{
 
 type Server struct {
 	serviceMap sync.Map
+
+	// AuthFunc can be used to auth
+	AuthFunc func(header *codec.Header, token string) error
 }
 
 func NewServer() *Server {
@@ -88,7 +101,7 @@ func (s *Server) serveCodec(cc codec.Codec, opt *Option) {
 			if req == nil {
 				break
 			}
-			req.h.Error = err
+			req.h.Error = err.Error()
 			s.sendResponse(cc, req.h, invalidRequest, sending)
 			continue
 		}
@@ -151,13 +164,22 @@ func (s *Server) sendResponse(cc codec.Codec, h *codec.Header, body interface{},
 
 func (s *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex, wg *sync.WaitGroup, timeout time.Duration) {
 	defer wg.Done()
+
+	// auth
+	err := s.auth(req.h)
+	if err != nil {
+		req.h.Error = fmt.Sprintf("rpc server: auth error within %s", req.h.Metadata[AuthKey])
+		s.sendResponse(cc, req.h, invalidRequest, sending)
+		return
+	}
+
 	called := make(chan struct{})
 	sent := make(chan struct{})
 	go func() {
 		err := req.svc.call(req.mtype, req.argv, req.replyv)
 		called <- struct{}{}
 		if err != nil {
-			req.h.Error = err
+			req.h.Error = err.Error()
 			s.sendResponse(cc, req.h, invalidRequest, sending)
 			sent <- struct{}{}
 			return
@@ -173,7 +195,7 @@ func (s *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex
 	}
 	select {
 	case <-time.After(timeout):
-		req.h.Error = fmt.Errorf("rpc server: request handle time expect within %s", timeout)
+		req.h.Error = fmt.Sprintf("rpc server: request handle time expect within %s", timeout)
 		s.sendResponse(cc, req.h, invalidRequest, sending)
 	case <-called:
 		<-sent
@@ -212,12 +234,6 @@ func (s *Server) findService(serviceMethod string) (svc *service, mtype *methodT
 	return
 }
 
-const (
-	connected        = "200 Connected to RPC"
-	defaultRPCPath   = "/_rpc_"
-	defaultDebugPath = "/debug/rpc"
-)
-
 func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "CONNECT" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -230,14 +246,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		log.Print("rpc hijacking ", req.RemoteAddr, ": ", err.Error())
 		return
 	}
-	_, _ = io.WriteString(conn, "HTTP/1.0 "+connected+"\n\n")
+	_, _ = io.WriteString(conn, "HTTP/1.0 "+Connected+"\n\n")
 	s.ServeConn(conn)
 }
 
 func (s *Server) HandleHTTP() {
-	http.Handle(defaultRPCPath, s)
-	http.Handle(defaultDebugPath, debugHTTP{s})
-	log.Println("rpc server debug path:", defaultDebugPath)
+	http.Handle(DefaultRPCPath, s)
+	http.Handle(DefaultDebugPath, debugHTTP{s})
+	log.Println("rpc server debug path:", DefaultDebugPath)
+}
+
+func (s *Server) auth(header *codec.Header) error {
+	if s.AuthFunc != nil {
+		token := header.Metadata[AuthKey]
+		return s.AuthFunc(header, token)
+	}
+
+	return nil
 }
 
 func HandleHTTP() {

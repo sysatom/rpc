@@ -3,9 +3,11 @@ package codec
 import "io"
 
 type Header struct {
-	ServiceMethod string // format "Service.Method"
 	Seq           uint64
-	Error         error
+	ServicePath   string
+	ServiceMethod string // format "Service.Method"
+	Metadata      map[string]string
+	Error         string
 }
 
 type Codec interface {
