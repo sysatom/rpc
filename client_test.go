@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"os"
 	"runtime"
@@ -70,7 +69,6 @@ func TestClient_Call(t *testing.T) {
 
 func TestXDial(t *testing.T) {
 	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
-		fmt.Println("linux")
 		ch := make(chan struct{})
 		addr := "/tmp/rpc.sock"
 		go func() {

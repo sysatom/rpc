@@ -38,7 +38,7 @@ type Option struct {
 var DefaultOption = &Option{
 	MagicNumber:    MagicNumber,
 	CodecType:      codec.GobType,
-	ConnectTimeout: time.Second * 10,
+	ConnectTimeout: time.Second * 5,
 }
 
 type Server struct {
@@ -96,7 +96,7 @@ func (s *Server) serveCodec(cc codec.Codec, opt *Option) {
 	sending := new(sync.Mutex)
 	wg := new(sync.WaitGroup)
 	for {
-		req, err := s.readRequest(cc)
+		req, err := s.readRequest(cc, opt.ConnectTimeout)
 		if err != nil {
 			if req == nil {
 				break
@@ -127,31 +127,61 @@ func (s *Server) readRequestHeader(cc codec.Codec) (*codec.Header, error) {
 		}
 		return nil, err
 	}
+
 	return &h, nil
 }
 
-func (s *Server) readRequest(cc codec.Codec) (*request, error) {
-	h, err := s.readRequestHeader(cc)
-	if err != nil {
-		return nil, err
-	}
-	req := &request{h: h}
-	req.svc, req.mtype, err = s.findService(h.ServiceMethod)
-	if err != nil {
-		return req, err
-	}
-	req.argv = req.mtype.newArgv()
-	req.replyv = req.mtype.newReplyv()
+func (s *Server) readRequest(cc codec.Codec, timeout time.Duration) (*request, error) {
+	read := make(chan struct{})
+	errChan := make(chan error)
+	reqChan := make(chan *request)
+	go func() {
+		h, err := s.readRequestHeader(cc)
+		if err != nil {
+			read<- struct{}{}
+			errChan<- err
+			reqChan<- nil
+			return
+		}
+		req := &request{h: h}
+		req.svc, req.mtype, err = s.findService(h.ServiceMethod)
+		if err != nil {
+			read<- struct{}{}
+			errChan<- err
+			reqChan<- nil
+			return
+		}
+		req.argv = req.mtype.newArgv()
+		req.replyv = req.mtype.newReplyv()
 
-	argvi := req.argv.Interface()
-	if req.argv.Type().Kind() != reflect.Ptr {
-		argvi = req.argv.Addr().Interface()
+		argvi := req.argv.Interface()
+		if req.argv.Type().Kind() != reflect.Ptr {
+			argvi = req.argv.Addr().Interface()
+		}
+		if err = cc.ReadBody(argvi); err != nil {
+			log.Println("rpc server: read body err:", err)
+			read<- struct{}{}
+			errChan<- err
+			reqChan<- nil
+			return
+		}
+
+		read<- struct{}{}
+		reqChan<- req
+		errChan<- nil
+	}()
+	
+	if timeout == 0 {
+		<-read
+		return <-reqChan, <-errChan
 	}
-	if err = cc.ReadBody(argvi); err != nil {
-		log.Println("rpc server: read body err:", err)
-		return req, err
+
+	select {
+	case <-time.After(timeout):
+		return nil, errors.New("read request timeout")
+	case <-read:
+		return <-reqChan, <-errChan
 	}
-	return req, nil
 }
 
 func (s *Server) sendResponse(cc codec.Codec, h *codec.Header, body interface{}, sending *sync.Mutex) {
@@ -164,7 +194,6 @@ func (s *Server) sendResponse(cc codec.Codec, h *codec.Header, body interface{},
 
 func (s *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex, wg *sync.WaitGroup, timeout time.Duration) {
 	defer wg.Done()
-
 	// auth
 	err := s.auth(req.h)
 	if err != nil {
